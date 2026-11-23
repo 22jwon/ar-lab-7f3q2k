@@ -2,97 +2,141 @@
 <html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<title>AR 시험</title>
+<title>방 AR</title>
 <style>
   body{margin:0;font:15px -apple-system,BlinkMacSystemFont,sans-serif;background:#10151a;color:#eef}
   #intro{padding:20px;max-width:560px;margin:0 auto}
-  button,a.btn{font:inherit;padding:12px 16px;border-radius:10px;border:0;background:#2f7dff;color:#fff;text-decoration:none;display:inline-block;margin:4px 4px 4px 0}
-  button.sub{background:#46505c}
+  h2{margin:.2em 0}
+  button,a.btn{font:inherit;padding:11px 14px;border-radius:10px;border:0;background:#2f7dff;color:#fff;text-decoration:none;display:inline-block;margin:3px 3px 3px 0}
+  button.sub{background:#46505c} button.on{background:#c9650b} button:disabled{opacity:.45}
   #log{white-space:pre-wrap;font:12px ui-monospace,monospace;background:#0006;padding:10px;border-radius:8px;margin-top:12px}
   #overlay{position:fixed;inset:0;pointer-events:none;display:none}
-  #overlay .box{pointer-events:auto;position:absolute;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));background:#000b;padding:10px 12px;border-radius:12px}
-  #overlay .top{pointer-events:auto;position:absolute;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));background:#000b;padding:8px 12px;border-radius:12px;font-size:13px}
+  #overlay .top{pointer-events:auto;position:absolute;left:12px;right:70px;top:calc(10px + env(safe-area-inset-top));background:#000b;padding:8px 12px;border-radius:12px;font-size:13px}
+  #overlay .box{pointer-events:auto;position:absolute;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));background:#000b;padding:8px 10px;border-radius:12px}
+  #overlay .row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:2px 0}
+  #overlay .row b{font-weight:600;font-size:12px;opacity:.8;min-width:34px}
+  #overlay button{margin:0;padding:9px 12px;min-width:42px}
+  #adjust{display:none}
 </style></head>
 <body>
 <div id="intro">
-  <h2>AR 시험 (방 데이터 없음)</h2>
-  <p>바닥의 모서리 두 곳을 차례로 누르면 3.69 × 3.40 m 방 윤곽(주황)과 작은 상자가 놓입니다. 앱클립·WebXR이 동작하는지 보는 시험 페이지입니다.</p>
-  <button id="start">AR 시작</button>
+  <h2>방 AR</h2>
+  <p id="meta">배치를 불러오는 중…</p>
+  <button id="start" disabled>AR 시작</button>
   <a class="btn sub" id="clip" href="#">앱클립(Needle Go)으로 열기</a>
+  <p style="font-size:13px;opacity:.85">아이폰 Safari에서는 위 '앱클립으로 열기'로 여세요. 방 안에서 <b>창이 있는 벽을 바라보고 서서</b>, 바닥의 <b>왼쪽 모서리</b>(창 두 개가 만나는 모서리), 이어서 <b>오른쪽 모서리</b>를 차례로 누르면 가구가 실제 방에 맞춰 놓입니다.</p>
   <div id="log"></div>
 </div>
 <div id="overlay">
   <div class="top" id="status">바닥을 천천히 비추세요</div>
-  <div class="box"><button id="undo" class="sub">다시</button><button id="end" class="sub">끝내기</button></div>
+  <div class="box">
+    <div id="adjust">
+      <div class="row"><b>이동</b><button data-m="l">←</button><button data-m="r">→</button><button data-m="f">↑</button><button data-m="b">↓</button><b style="min-width:0;margin-left:6px">높이</b><button data-m="u">▲</button><button data-m="d">▼</button></div>
+      <div class="row"><b>회전</b><button data-m="ccw">⟲</button><button data-m="cw">⟳</button><button id="step" class="sub" style="margin-left:6px">1 cm · 0.5°</button><button id="outline" class="on">윤곽 켬</button></div>
+    </div>
+    <div class="row"><button id="undo" class="sub">다시 맞추기</button><button id="end" class="sub">끝내기</button></div>
+  </div>
 </div>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const $ = s => document.querySelector(s), log = m => { $('#log').textContent += m + '\n'; };
-const here = location.href.split('#')[0];
+const here = location.href.split('#')[0].split('?')[0];
 $('#clip').href = 'https://appclip.needle.tools/ar?url=' + encodeURIComponent(here);
-log('주소: ' + here);
-log('navigator.xr: ' + (navigator.xr ? '있음' : '없음'));
-log('UA: ' + navigator.userAgent.slice(0, 90));
-let supported = false;
-try { supported = navigator.xr ? await navigator.xr.isSessionSupported('immersive-ar') : false; } catch (e) { log('isSessionSupported 오류: ' + e.message); }
-log('immersive-ar 지원: ' + supported);
 
-const ROOM = { w: 3.69, d: 3.4 };
-let renderer, scene, camera, session, hitSource, refSpace, reticle, room, taps = [];
-function buildRoom() {
+const ROOM = { w: 3.69, d: 3.4 };   // 방 안쪽 치수(m). 모델 원점 = 방 모서리, x 0..w, z -d..0 (roomos/src/ar.js 와 같음)
+let renderer, scene, camera, session, hitSource, refSpace, reticle, room, outline, taps = [], furniture, step = 1;
+
+// 정렬 윤곽: 바닥 띠 + 모서리 기둥(창 두 개가 만나는 모서리만 파란 키 큰 기둥)
+function buildOutline() {
   const g = new THREE.Group();
   const orange = new THREE.MeshBasicMaterial({ color: 0xff7a00 }), blue = new THREE.MeshBasicMaterial({ color: 0x1e6bff });
-  const { w, d } = ROOM, t = 0.06, h = 0.01;
+  const { w, d } = ROOM, t = 0.05, h = 0.01;
   const box = (sx, sy, sz, x, y, z, m = orange) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); g.add(b); };
   box(w, h, t, w / 2, h / 2, -t / 2); box(w, h, t, w / 2, h / 2, -d + t / 2);
   box(t, h, d, t / 2, h / 2, -d / 2); box(t, h, d, w - t / 2, h / 2, -d / 2);
   box(t, 1.0, t, t / 2, 0.5, -t / 2); box(t, 1.0, t, t / 2, 0.5, -d + t / 2); box(t, 1.0, t, w - t / 2, 0.5, -d + t / 2);
-  box(t, 1.6, t, w - t / 2, 0.8, -t / 2, blue);          // 창 두 개가 만나는 모서리(첫 번째로 누를 곳)
-  const f = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.75, 0.5), new THREE.MeshNormalMaterial()); f.position.set(0.9, 0.375, -1.2); g.add(f);   // 가구 대신 상자
+  box(t, 1.6, t, w - t / 2, 0.8, -t / 2, blue);
   return g;
 }
-function align() {   // taps[0]=모델 (w,0) 모서리, taps[1]=모델 (0,0) 모서리
+
+// 가구와 설명을 미리 불러온다
+let ready = false;
+try {
+  const meta = await fetch('meta.json', { cache: 'no-store' }).then(r => r.json());
+  const when = new Date(meta.builtAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
+  $('#meta').textContent = `배치 갱신: ${when} (${(meta.bytes / 1048576).toFixed(1)} MB) · 불러오는 중…`;
+  furniture = await new Promise((ok, no) => new GLTFLoader().load('furniture.glb?v=' + encodeURIComponent(meta.builtAt), g => ok(g.scene), e => { if (e.total) $('#meta').textContent = `배치 갱신: ${when} · 불러오는 중 ${Math.round(100 * e.loaded / e.total)}%`; }, no));
+  $('#meta').textContent = `배치 갱신: ${when} · 준비됨`;
+  ready = true;
+} catch (e) { $('#meta').textContent = '배치를 불러오지 못했습니다: ' + e.message; log(String(e.stack || e)); }
+let supported = false;
+try { supported = navigator.xr ? await navigator.xr.isSessionSupported('immersive-ar') : false; } catch (e) { log('isSessionSupported 오류: ' + e.message); }
+log(`navigator.xr: ${navigator.xr ? '있음' : '없음'} · immersive-ar: ${supported}`);
+$('#start').disabled = !ready;
+
+function align() {   // taps[0]=모델 (w,0) 모서리(창 두 개가 만나는 곳), taps[1]=모델 (0,0) 모서리
   const A = taps[0], B = taps[1], dx = A.x - B.x, dz = A.z - B.z;
   room.rotation.set(0, Math.atan2(-dz, dx), 0);
   room.position.set(B.x, (A.y + B.y) / 2, B.z);
   room.visible = true;
-  const len = Math.hypot(dx, dz);
-  $('#status').textContent = `정렬됨 · 두 모서리 거리 ${len.toFixed(2)} m (실제는 ${ROOM.w} m 가까워야 함)`;
+  $('#adjust').style.display = 'block';
+  $('#status').textContent = `정렬됨 · 두 모서리 거리 ${Math.hypot(dx, dz).toFixed(2)} m (실제 ${ROOM.w} m). 어긋나면 아래로 미세 조정`;
 }
-function reset() { taps = []; room.visible = false; $('#status').textContent = '방 안에서 창 있는 벽을 보고 서서, 왼쪽 모서리를 누르세요'; }
+function reset() {
+  taps = []; room.visible = false; $('#adjust').style.display = 'none';
+  $('#status').textContent = '방 안에서 창 있는 벽을 보고 서서, 왼쪽 모서리 바닥을 누르세요';
+}
+function nudge(k) {
+  const cm = step === 1 ? 0.01 : 0.05, deg = step === 1 ? 0.5 : 2;
+  const m = renderer.xr.getCamera().matrixWorld.elements;
+  const f = new THREE.Vector3(-m[8], 0, -m[10]); if (f.lengthSq() < 1e-6) f.set(0, 0, -1); f.normalize();
+  const r = new THREE.Vector3(-f.z, 0, f.x);
+  if (k === 'l') room.position.addScaledVector(r, -cm);
+  else if (k === 'r') room.position.addScaledVector(r, cm);
+  else if (k === 'f') room.position.addScaledVector(f, cm);
+  else if (k === 'b') room.position.addScaledVector(f, -cm);
+  else if (k === 'u') room.position.y += cm;
+  else if (k === 'd') room.position.y -= cm;
+  else if (k === 'ccw') room.rotation.y += THREE.MathUtils.degToRad(deg);
+  else if (k === 'cw') room.rotation.y -= THREE.MathUtils.degToRad(deg);
+}
 async function start() {
   try {
-    if (!navigator.xr) throw Error('WebXR 없음');
+    if (!navigator.xr) throw Error('이 브라우저에는 WebXR이 없습니다. 위 \'앱클립으로 열기\'를 쓰세요');
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(devicePixelRatio); renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight);
     renderer.xr.enabled = true; renderer.xr.setReferenceSpaceType('local');
     scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.02, 50);
-    room = buildRoom(); room.visible = false; scene.add(room);
+    scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(1, 3, 1); scene.add(sun);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 0.9));
+    room = new THREE.Group(); room.visible = false; scene.add(room);
+    room.add(furniture); outline = buildOutline(); room.add(outline);
     reticle = new THREE.Mesh(new THREE.RingGeometry(0.04, 0.06, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x00e08a }));
     reticle.matrixAutoUpdate = false; reticle.visible = false; scene.add(reticle);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x666666, 2));
     const overlay = $('#overlay');
+    overlay.addEventListener('beforexrselect', e => e.preventDefault());   // 버튼을 누른 것이 바닥 누르기로 읽히지 않게
     session = await navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay', 'local-floor'], domOverlay: { root: overlay } });
-    log('세션 시작됨. 활성 기능: ' + (session.enabledFeatures ? [...session.enabledFeatures].join(', ') : '(알 수 없음)'));
     document.body.appendChild(renderer.domElement); renderer.domElement.style.cssText = 'position:fixed;inset:0';
     overlay.style.display = 'block'; $('#intro').style.display = 'none';
     await renderer.xr.setSession(session);
     refSpace = renderer.xr.getReferenceSpace();
-    const viewer = await session.requestReferenceSpace('viewer');
-    hitSource = await session.requestHitTestSource({ space: viewer });
+    hitSource = await session.requestHitTestSource({ space: await session.requestReferenceSpace('viewer') });
     reset();
     session.addEventListener('select', () => {
       if (!reticle.visible || taps.length >= 2) return;
       taps.push(new THREE.Vector3().setFromMatrixPosition(reticle.matrix));
-      if (taps.length === 1) $('#status').textContent = '이제 오른쪽 모서리를 누르세요';
+      if (taps.length === 1) $('#status').textContent = '이제 오른쪽 모서리 바닥을 누르세요';
       else align();
     });
-    session.addEventListener('end', () => { log('세션 종료'); overlay.style.display = 'none'; $('#intro').style.display = 'block'; renderer.setAnimationLoop(null); renderer.domElement.remove(); });
+    session.addEventListener('end', () => { overlay.style.display = 'none'; $('#intro').style.display = 'block'; renderer.setAnimationLoop(null); renderer.domElement.remove(); });
     renderer.setAnimationLoop((t, frame) => {
       if (frame && hitSource) {
         const hits = frame.getHitTestResults(hitSource);
-        if (hits.length) { reticle.visible = true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
+        if (hits.length && taps.length < 2) { reticle.visible = true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
         else reticle.visible = false;
       }
       renderer.render(scene, camera);
@@ -100,6 +144,9 @@ async function start() {
   } catch (e) { log('시작 실패: ' + e.message); $('#intro').style.display = 'block'; }
 }
 $('#start').onclick = start;
-$('#undo').onclick = reset;
+$('#undo').onclick = () => room && reset();
 $('#end').onclick = () => session?.end();
+document.querySelectorAll('[data-m]').forEach(b => { b.onclick = () => room?.visible && nudge(b.dataset.m); });
+$('#step').onclick = () => { step = step === 1 ? 5 : 1; $('#step').textContent = step === 1 ? '1 cm · 0.5°' : '5 cm · 2°'; };
+$('#outline').onclick = () => { outline.visible = !outline.visible; $('#outline').classList.toggle('on', outline.visible); $('#outline').textContent = outline.visible ? '윤곽 켬' : '윤곽 끔'; };
 </script></body></html>
