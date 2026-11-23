@@ -118,7 +118,8 @@ async function start() {
     reticle = new THREE.Mesh(new THREE.RingGeometry(0.04, 0.06, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x00e08a }));
     reticle.matrixAutoUpdate = false; reticle.visible = false; scene.add(reticle);
     const overlay = $('#overlay');
-    overlay.addEventListener('beforexrselect', e => e.preventDefault());   // 버튼을 누른 것이 바닥 누르기로 읽히지 않게
+    // 버튼 영역에만 건다: 화면 전체(overlay)에 걸면 앱클립에서 바닥 누르기까지 막혀 첫 모서리가 안 눌렸다(2026-11-23)
+    for (const el of overlay.querySelectorAll('.top, .box')) el.addEventListener('beforexrselect', e => e.preventDefault());
     session = await navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay', 'local-floor'], domOverlay: { root: overlay } });
     document.body.appendChild(renderer.domElement); renderer.domElement.style.cssText = 'position:fixed;inset:0';
     overlay.style.display = 'block'; $('#intro').style.display = 'none';
@@ -129,8 +130,7 @@ async function start() {
     session.addEventListener('select', () => {
       if (!reticle.visible || taps.length >= 2) return;
       taps.push(new THREE.Vector3().setFromMatrixPosition(reticle.matrix));
-      if (taps.length === 1) $('#status').textContent = '이제 오른쪽 모서리 바닥을 누르세요';
-      else align();
+      if (taps.length === 2) align();
     });
     session.addEventListener('end', () => { overlay.style.display = 'none'; $('#intro').style.display = 'block'; renderer.setAnimationLoop(null); renderer.domElement.remove(); });
     renderer.setAnimationLoop((t, frame) => {
@@ -138,6 +138,10 @@ async function start() {
         const hits = frame.getHitTestResults(hitSource);
         if (hits.length && taps.length < 2) { reticle.visible = true; reticle.matrix.fromArray(hits[0].getPose(refSpace).transform.matrix); }
         else reticle.visible = false;
+        if (taps.length < 2) {   // 눌러도 되는지 글자로 알려 준다
+          const msg = (taps.length ? '이제 오른쪽 모서리 바닥을 누르세요' : '방 안에서 창 있는 벽을 보고 서서, 왼쪽 모서리 바닥을 누르세요') + (reticle.visible ? ' · 녹색 원 인식됨' : ' · 바닥을 비추는 중…');
+          if ($('#status').textContent !== msg) $('#status').textContent = msg;
+        }
       }
       renderer.render(scene, camera);
     });
